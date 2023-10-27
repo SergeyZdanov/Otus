@@ -32,59 +32,67 @@ namespace TgBotOtus
                 var us = db.DietName.Select(x => x.DietaNameOrig).ToList();//поиск в бд
                 return us;                 
             }
-
         }
 
 
         internal async void FindDiet(long userId, string dietname, CancellationToken cancellationToken) 
         {
-            var temp = db.DietName.FirstOrDefault(x=> x.DietaNameOrig == dietname.Trim());
-            int id = temp.Id;
-            var diets = db.Dishes.Where(x => x.DietaNameId == id);
-            var ingredients = db.OtusUsers.FirstOrDefault(x => x.IdUser == userId.ToString());//поиск в бд
-            var mas = ingredients.ReservProducts.ToLower().Trim().Split(",");
-            int prohod = 0;
-            var dishes = new List<string>();
-            var dishes75 = new List<string>();
-
-            foreach (var d in diets)
+            IQueryable<Dishes> diets;
+            using (ApplicationContext db = new ApplicationContext())
             {
-                foreach (var m in mas)
+                var temp = db.DietName.FirstOrDefault(x => x.DietaNameOrig == dietname.Trim());
+                int id = temp.Id;
+
+                if (id != 3)
                 {
-                    if (d.Ingredients.Contains(m.Trim()))
+                    diets = db.Dishes.Where(x => x.DietaNameId == id);
+                }
+                else
+                {
+                    diets = db.Dishes.Select(x => x);
+                }
+                var ingredients = db.OtusUsers.FirstOrDefault(x => x.IdUser == userId.ToString());//поиск в бд
+                var mas = ingredients.ReservProducts.ToLower().Trim().Split(",");
+                int prohod = 0;
+                var dishes = new List<string>();
+                var dishes75 = new List<string>();
+
+                foreach (var d in diets)
+                {
+                    foreach (var m in mas)
                     {
-                        prohod++;
-                    }             
+                        if (d.Ingredients.Contains(m.Trim()))
+                        {
+                            prohod++;
+                        }
+                    }
+                    var tempD = d.Ingredients.Split(",");
+                    if (prohod == tempD.Length)
+                    {
+                        dishes.Add(d.DishName);
+                    }
+                    if (prohod >= tempD.Length * 0.6)
+                    {
+                        dishes75.Add(d.DishName);
+                    }
+                    prohod = 0;
                 }
-                var tempD = d.Ingredients.Split(",");
-                if (prohod == tempD.Length)
+                var dish75 = dishes75.Except(dishes).ToList();
+
+                if (dish75.Count == 0 && dishes.Count == 0)
                 {
-                    dishes.Add(d.DishName);
+                    await _botClient.SendTextMessageAsync(chatId: userId, text: "К сожалению, мне не удалось найти подходящего блюда", cancellationToken: cancellationToken);
                 }
-                if (prohod >= tempD.Length * 0.6)
+                else
                 {
-                    dishes75.Add(d.DishName);
+                    if (dishes.Count > 0)
+                        GenerateButtons(userId, dishes, "Recept", cancellationToken,
+                            "Ниже представлены названия блюд,  которые Вы можете приготовить \nНажмите на кнопку, чтобы посмотреть подробную информацию:");
+                    if (dish75.Count > 0)
+                        GenerateButtons(userId, dish75, "Recept", cancellationToken,
+                            "Ниже представлены названия блюд, для которых не хватает нескольких ингредиентов:");
                 }
-                prohod = 0;
             }
-            var dish75 = dishes75.Except(dishes).ToList();
-
-            if (dish75.Count == 0 && dishes.Count == 0)
-            {
-                await _botClient.SendTextMessageAsync(chatId: userId, text: "К сожалению, мне не удалось найти подходящего блюда" , cancellationToken: cancellationToken);
-            }
-            else 
-            {
-                if (dishes.Count > 0)
-                    GenerateButtons(userId, dishes, "Recept", cancellationToken,
-                        "Ниже представлены названия блюд,  которые Вы можете приготовить \nНажмите на кнопку, чтобы посмотреть подробную информацию:");
-                if (dish75.Count > 0)
-                    GenerateButtons(userId, dish75, "Recept", cancellationToken,
-                        "Ниже представлены названия блюд, для которых нехватает несколько ингрдиентов!:");
-            }
-
-          
-
         }
         internal async void Recept(long userId, string dishname, CancellationToken cancellationToken) 
         {
@@ -92,11 +100,7 @@ namespace TgBotOtus
             string temp = "";
             foreach (var d in dish) 
             {
-                temp = "------------------------------------------"+"\n"+"         " + d.DishName + "\n" + "Ингридиенты: " + d.Ingredients + "\n" + "Рецепт: " + d.Recept + "\n" + "------------------------------------------";
-                //await _botClient.SendTextMessageAsync(chatId: userId, text: "             "+d.DishName, cancellationToken: cancellationToken);
-                //await _botClient.SendTextMessageAsync(chatId: userId, text: "Ингридиенты: "+d.Ingredients, cancellationToken: cancellationToken);
-                //await _botClient.SendTextMessageAsync(chatId: userId, text: "Рецепт: " + d.Recept, cancellationToken: cancellationToken);
-                //await _botClient.SendTextMessageAsync(chatId: userId, text: "------------------------------------------", cancellationToken: cancellationToken);
+                temp = "------------------------------------------"+"\n"+"         " + d.DishName + "\n" + "Ингредиенты: " + d.Ingredients + "\n" + "Рецепт: " + d.Recept + "\n" + "------------------------------------------";
             }
             await _botClient.SendTextMessageAsync(chatId: userId, text: temp, cancellationToken: cancellationToken);
 
@@ -104,8 +108,8 @@ namespace TgBotOtus
 
         internal async void GenerateButtons(long userId, IList<string> mas, string mod, CancellationToken cancellationToken, string textMessage, int buttonsPerRow = 1)
         {
-
-
+         //  textMessage = "ыва";
+          //  mas[0] = "aaa";
             InlineKeyboardButton[] dStart = new InlineKeyboardButton[mas.Count];
             for (int i = 0; i < mas.Count; i++)
             {
@@ -120,7 +124,6 @@ namespace TgBotOtus
             else
             {
                 inlineKeyboard = dStart.Chunk(buttonsPerRow).Select(c => c.ToArray()).ToArray();
-                //  inlineKeyboard = inlineK;
                 await _botClient.SendTextMessageAsync(chatId: userId, text: textMessage, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
             }
         }

@@ -25,14 +25,12 @@ public class TelegramBotService
     public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
  
-
         if (update.Type == Telegram.Bot.Types.Enums.UpdateType.CallbackQuery)
         {
             /*var fridge = new Fridge(update.CallbackQuery.From.Id, _botClient, cancellationToken);*/
 
             if (update.CallbackQuery.Data.Contains("FridgeEdit"))
             {
-
                 _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
                 string temp = update.CallbackQuery.Data;
                 temp = temp.Replace("FridgeEdit", ""); 
@@ -44,7 +42,14 @@ public class TelegramBotService
                     fridge.DeleteFridge(update.CallbackQuery.From.Id, temp, cancellationToken);
                 }             
             }
-
+            else if (update.CallbackQuery.Data.Contains("Ingredient"))
+            {
+                _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
+                string callQueryState = update.CallbackQuery.Data.Split(" ")[1];
+                var s = update.CallbackQuery.Message.ReplyMarkup;
+                
+                fridge.changeIngredient(update.CallbackQuery.From.Id, callQueryState, s, cancellationToken);
+            }
             else if (update.CallbackQuery.Data.Contains("Recept"))
             {
                     _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
@@ -57,11 +62,7 @@ public class TelegramBotService
 
                 switch (callQueryState)
                 {
-               /*     case "Холодильник":
-                        _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
-                        string[] massive = new string[3] { "Посмотреть", "Редактировать", "Добавить" };
-                        fridge.GenerateButtons(update.CallbackQuery.From.Id, massive, "start", cancellationToken, "Вы можете просмотреть список ваших продктутов, либо редактировать этот список");
-                        break;*/
+
                     case "Посмотреть":
                         _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
                         fridge.WatchFridge(update.CallbackQuery.From.Id, cancellationToken);
@@ -72,21 +73,25 @@ public class TelegramBotService
                         break;
                     case "Добавить":
                         _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.fridgeEdit);
-                        await _botClient.SendTextMessageAsync(update.CallbackQuery.From.Id, "Введите продукты через запятую", cancellationToken: cancellationToken);
+                        fridge.GetCategoies(update.CallbackQuery.From.Id, cancellationToken);                    
                         break;
-                  /*  case "Диеты":
-                        _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
-                        List<string> mas =  await diets.WatchDiets();
-                        diets.GenerateButtons(update.CallbackQuery.From.Id, mas, "diets Watch", cancellationToken, "Вот список имеющихся диет:");                     
-                        break;*/
                     case "Watch":
                         _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
                         var temp = update.CallbackQuery.Data.Replace("diets Watch","");
                         diets.FindDiet(update.CallbackQuery.From.Id, temp, cancellationToken);
-                        break;                
+                        break;
+                    case "Category":
+                        _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
+                        var temp2 = update.CallbackQuery.Data.Replace(" Category", "");
+                        fridge.GetIngredients(update.CallbackQuery.From.Id, temp2, cancellationToken);
+                        break;
+                    case "Ingr":
+                        _usersStateService.SetState(update.CallbackQuery.From.Id, UserState.NoState);
+                        var temp3 = update.CallbackQuery.Data.Replace(" Category", "");
+                        fridge.GetIngredients(update.CallbackQuery.From.Id, temp3, cancellationToken);
+                        break;
                 }
             }
-
         }
         if (update.Message is null)
             return;
@@ -104,15 +109,15 @@ public class TelegramBotService
 
         if (messageText.StartsWith("/"))
         {
-            await HandleCommands(chatId, messageText, cancellationToken);
+            await HandleCommands(chatId, update, messageText, cancellationToken);
         }
         else
         {
             await HandleMessageByState(fromUser, botClient, chatId, messageText, cancellationToken);
         }
-
-
     }
+
+
 
     public Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
     {
@@ -127,15 +132,15 @@ public class TelegramBotService
         return Task.CompletedTask;
     }
 
-    async Task HandleCommands(long chatId, string command, CancellationToken cancellationToken)
+    async Task HandleCommands(long chatId, Update update,  string command, CancellationToken cancellationToken)
     {
         switch (command)
         {
 
             case "/start":
-
+                _usersStateService.SetState(update.Id, UserState.NoState);
                 /*string[] buttons = new string[] { "Холодильник", "Диеты" };*/
-               var  buttons =  GenerateButtons1(_botClient, chatId, cancellationToken);
+                var  buttons =  GenerateButtons1(_botClient, chatId, cancellationToken);
                /* InlineKeyboardMarkup but = GenerateButtons(buttons, "start", 1);*/
                 
                 await _botClient.SendTextMessageAsync(
@@ -164,8 +169,6 @@ public class TelegramBotService
        string text,
        CancellationToken cancellationToken)
     {
-
-
         if (text.Contains("Холодильник") || text.Contains("Диеты"))
         {
             if (text.Contains("Холодильник"))
@@ -241,9 +244,6 @@ public class TelegramBotService
     }
 
 
-
-
-
     public static InlineKeyboardButton[][] GenerateButtons(IList<string> mas, string mod, int buttonsPerRow = 0)
     {
         switch (mod)
@@ -271,8 +271,6 @@ public class TelegramBotService
 
     public static ReplyKeyboardMarkup GenerateButtons1(ITelegramBotClient botClient, long userId, CancellationToken cancellationToken )
     {
-
-
         ReplyKeyboardMarkup inlineKeyboard = new(new[]
         {         
           new KeyboardButton[] {"Холодильник", "Диеты"}
@@ -280,8 +278,6 @@ public class TelegramBotService
         inlineKeyboard.ResizeKeyboard = true;
 
         return inlineKeyboard;
-
-
     }
 
     public static string RemovePunctuations(string input)

@@ -9,7 +9,8 @@ namespace TgBotOtus
         public DbSet<OtusUsers> OtusUsers { get; set; } = null!;
         public DbSet<Dishes> Dishes { get; set; } = null!;
         public DbSet<DietName> DietName { get; set; } = null!;
-
+        public DbSet<Category> Category { get; set; } = null!;
+        public DbSet<IngredientS> Ingredients { get; set; } = null!;
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             optionsBuilder.UseSqlServer(@"Data Source=.\SQLEXPRESS;Database=TgDB;Trusted_Connection=True;TrustServerCertificate=True");

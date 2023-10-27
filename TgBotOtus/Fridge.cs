@@ -1,7 +1,9 @@
-﻿using Telegram.Bot;
+﻿using System.Net.NetworkInformation;
+using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 using TgBotOtus.Models;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace TgBotOtus
 {
@@ -12,8 +14,10 @@ namespace TgBotOtus
         private InlineKeyboardMarkup? inlineKeyboard;
         CancellationToken cancellationToken;
         Message m = null;
+        Message MIng = null;
         private readonly UsersStateService _usersStateService;
-
+        ApplicationContext db = new ApplicationContext();
+        List<string> ingestsList = new List<string>();
 
         internal Fridge( ITelegramBotClient botClient, UsersStateService usersStateService, CancellationToken CancellationToken) 
         {
@@ -24,6 +28,21 @@ namespace TgBotOtus
            // GenerateButtons(IdUser, massive, "start", cancellationToken);
         }
 
+        internal async void GenerateButtons2(long userId, IList<string> mas, string mod, CancellationToken cancellationToken, string textMessage, int buttonsPerRow = 1)
+        {
+            List<InlineKeyboardButton[]> list = new List<InlineKeyboardButton[]>(); // Создаём массив колонок
+            for (int i = 0; i < 9; i=i+3)
+            { // Можно использовать и foreach
+                InlineKeyboardButton button = new InlineKeyboardButton(mas[i]) { CallbackData = mas[i]+ " Category" };//Создаём кнопку
+                InlineKeyboardButton button2 = new InlineKeyboardButton(mas[i+1]) { CallbackData = mas[i+1] + " Category" };//Создаём кнопку
+                InlineKeyboardButton button3 = new InlineKeyboardButton(mas[i + 2]) { CallbackData = mas[i + 2] + " Category" };//Создаём кнопку
+                InlineKeyboardButton[] row = new InlineKeyboardButton[3] {button, button2, button3 }; // Создаём массив кнопок,в нашем случае он будет из одного элемента
+                list.Add(row);//И добавляем его
+            }
+            var inline = new InlineKeyboardMarkup(list);//создаём клавиатуру
+  
+            await _botClient.SendTextMessageAsync(chatId: userId, "---------------------------------------------------",  replyMarkup: inline, cancellationToken: cancellationToken);
+        }
         internal async void GenerateButtons(long userId, IList<string> mas, string mod, CancellationToken cancellationToken, string textMessage, int buttonsPerRow = 1)
         {
                     InlineKeyboardButton[] dStart = new InlineKeyboardButton[mas.Count];
@@ -31,8 +50,7 @@ namespace TgBotOtus
                     {
                         dStart[i] = InlineKeyboardButton.WithCallbackData(mas[i], mod+ " " + mas[i]);
                     }
-
-              
+   
                     if (buttonsPerRow == 0)
                     {
                         inlineKeyboard = new InlineKeyboardButton[][] { dStart.ToArray() };
@@ -46,7 +64,6 @@ namespace TgBotOtus
                     // _botClient.EditMessageReplyMarkupAsync(userId, a.MessageId); //Удаляет кнопки
                     }            
         }
-
         internal async void GenerateButtonsDelete(long userId, IList<string> mas, string mod, CancellationToken cancellationToken, string textMessage, int buttonsPerRow = 1)
         {
             InlineKeyboardButton[] dStart = new InlineKeyboardButton[mas.Count];
@@ -70,10 +87,40 @@ namespace TgBotOtus
              
                 _botClient.EditMessageReplyMarkupAsync(userId, m.MessageId); //Удаляет кнопки
                 m = await _botClient.SendTextMessageAsync(chatId: userId, text: textMessage, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
-           
+
+            }
+        }
+        internal async void GenerateButtonsDeleteIng(long userId, IList<string> mas, string mod, CancellationToken cancellationToken, string textMessage, int buttonsPerRow = 1)
+        {
+            InlineKeyboardButton[] dStart = new InlineKeyboardButton[mas.Count];
+            for (int i = 0; i < mas.Count; i++)
+            {
+                dStart[i] = InlineKeyboardButton.WithCallbackData(mas[i], mod + " " + mas[i]);
             }
 
+            inlineKeyboard = dStart.Chunk(buttonsPerRow).Select(c => c.ToArray()).ToArray();
+            if (MIng == null)
+            {
+                MIng = await _botClient.SendTextMessageAsync(chatId: userId, text: textMessage, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
+            }
+            else
+            {
+                if (MIng.Text == "Продукты")
+                {
+                    _botClient.DeleteMessageAsync(MIng.Chat.Id, MIng.MessageId); //Удаляет кнопки
+                }
+                _botClient.EditMessageReplyMarkupAsync(userId, MIng.MessageId); //Удаляет кнопки
 
+                if (mod != "Close") 
+                {
+                    MIng = await _botClient.SendTextMessageAsync(chatId: userId, text: textMessage, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
+                }
+                else 
+                {
+
+                }
+               
+            }
         }
         internal async void WatchFridge(long userId, CancellationToken cancellationToken)
         {
@@ -81,12 +128,17 @@ namespace TgBotOtus
             {
                 string a = userId.ToString();
                 OtusUsers? us = db.OtusUsers.FirstOrDefault(x => x.IdUser == a);//поиск в бд
-                string[] t = us.ReservProducts.Split(",");              
-                string temp="Сейчас в Вашем холодильнике следующие ингридиенты:\n"; 
-                foreach (string s in t) 
+                string temp = "Сейчас в Вашем холодильнике следующие ингредиенты:\n";
+                if (us != null) 
                 {
-                    temp = temp + s+"\n";
+                    string[] t = us.ReservProducts.Split(",");
+                  
+                    foreach (string s in t)
+                    {
+                        temp = temp + s + "\n";
+                    }
                 }
+             
                                                                                 //  _usersStateService.SetState(chatId, UserState.fridge);
                 if (us is null || us.ReservProducts is null || us.ReservProducts == "")
                 {
@@ -105,9 +157,56 @@ namespace TgBotOtus
                      cancellationToken: cancellationToken);
                 }
             }
+        }
+        internal async void GetCategoies(long userId, CancellationToken cancellationToken) 
+        {
+            var temp = db.Category.Select(x=>x.CategoryDish).ToList();
+            GenerateButtons2(userId, temp, "Category", cancellationToken, "Категории продуктов");
 
         }
+        internal async void GetIngredients(long userId, string IngName, CancellationToken cancellationToken)
+        {
+            var temp = db.Ingredients.Where(x => x.CategoryName == IngName).Select(x=>x.Ingredient).ToList();
+            temp.Add("Закрыть.");
+            GenerateButtonsDeleteIng(userId, temp, "Ingredient", cancellationToken, "Продукты");
+        }
+        internal async void changeIngredient(long userId, string IngName, InlineKeyboardMarkup mar, CancellationToken cancellationToken)
+        {
+            string par1 = "ChangeIngredient";
+            string par2 = "Продукты";
 
+            var listIng = new List<string>();
+            foreach (var temp in mar.InlineKeyboard.ToList()) 
+            {
+               foreach(var temp1 in temp) 
+                {
+                    listIng.Add(temp1.Text);
+                }
+            }
+            int index = listIng.IndexOf(IngName);
+            if (listIng[index].Contains("Закрыть.")) 
+            {
+                listIng.Clear();
+                
+               SetIngredients(userId, ingestsList, cancellationToken);
+                ingestsList.Clear();
+                par1 = "Close";
+            }
+            else 
+            {
+                if (listIng[index].Contains("✅"))
+                {
+                    listIng[index] = listIng[index].Replace("✅", "");
+                    ingestsList.Remove(listIng[index]);
+                }
+                else
+                {
+                    ingestsList.Add(listIng[index]);
+                    listIng[index] = listIng[index] + "✅";
+                }
+            }       
+            GenerateButtonsDeleteIng(userId, listIng, par1, cancellationToken, par2);
+        }
         internal async void EditFridge(long userId, CancellationToken cancellationToken)
         {
             using (ApplicationContext db = new ApplicationContext())
@@ -119,7 +218,7 @@ namespace TgBotOtus
                 {
                  //   _usersStateService.SetState(userId, UserState.fridge);
                     await _botClient.SendTextMessageAsync(
-                        chatId: userId, text: "Вас нет в базе, расскажите, какие продукты у Вас имеются", cancellationToken: cancellationToken);
+                    chatId: userId, text: "Вас нет в базе, расскажите, какие продукты у Вас имеются", cancellationToken: cancellationToken);
 
                     OtusUsers ou = new OtusUsers() { IdUser = a };
                     // Добавление
@@ -130,7 +229,7 @@ namespace TgBotOtus
                 {
                    // _usersStateService.SetState(chatId, UserState.fridge);
                     await _botClient.SendTextMessageAsync(
-                        chatId: userId, text: "Ваш холодильник пуск, пожалуйста, введите список продуктов", cancellationToken: cancellationToken);
+                    chatId: userId, text: "Ваш холодильник пуск, пожалуйста, введите список продуктов", cancellationToken: cancellationToken);
                 }
                 else
                 {
@@ -143,10 +242,8 @@ namespace TgBotOtus
             }
 
         }
-
         internal async void DeleteFridge(long Id, string dishName,  CancellationToken cancellationToken) 
-        {
-           // var a = update.CallbackQuery.Data;
+        { 
             using (ApplicationContext db = new ApplicationContext())
             {
                 var userId = Id.ToString();
@@ -172,9 +269,7 @@ namespace TgBotOtus
                     {
                         products = products.Replace(dishName, "");
                     }
-                    
                     string[] mas = products.Split(",");
-
                     //OtusUsers tom = new OtusUsers { IdUser = a, ReservProducts = text };
                     us.ReservProducts = products;
                     // Добавление
@@ -192,6 +287,41 @@ namespace TgBotOtus
                 }
             }
         }
-
+        internal async void SetIngredients(long chatId, List<string> text, CancellationToken cancellationToken) 
+        {
+            if (text.Count != 0) 
+            {
+                string temp = "";
+                string a = chatId.ToString();
+                using (ApplicationContext db = new ApplicationContext())
+                {
+                    OtusUsers? us = db.OtusUsers.FirstOrDefault(x => x.IdUser == a);//поиск в бд
+                    if (us.ReservProducts is null || us.ReservProducts == "")
+                    {
+                        foreach (var t in text)
+                        {
+                            temp = temp + t + ",";
+                        }
+                        temp = temp.Remove(temp.Length - 1, 1);
+                        us.ReservProducts = temp.ToLower();
+                        db.OtusUsers.Update(us);
+                        db.SaveChanges();
+                    }
+                    else
+                    {
+                        foreach (var t in text)
+                        {
+                            temp = temp + t + ",";
+                        }
+                        temp = temp.Remove(temp.Length - 1, 1);
+                        string temp1 = us.ReservProducts.ToString() + "," + temp.ToLower();
+                        us.ReservProducts = temp1;
+                        db.OtusUsers.Update(us);
+                        db.SaveChanges();
+                    }
+                }
+            }
+           
+        }
     }
 }
